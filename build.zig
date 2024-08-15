@@ -11,16 +11,20 @@ const version = std.SemanticVersion{
 const lib_name = "lua";
 const exe_name = lib_name;
 const compiler_name = "luac";
+
 pub fn build(b: *Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseFast });
+
     const build_shared = b.option(bool, "shared", "build as shared library") orelse target.result.isMinGW();
     const use_readline =
         if (target.result.os.tag == .linux)
         b.option(bool, "use_readline", "readline support for linux") orelse false
     else
         null;
+
     const lua_src = b.dependency("lua", .{});
+
     const lib = if (!build_shared)
         b.addStaticLibrary(artifactOptions(
             .{ .shared = false },
@@ -49,8 +53,8 @@ pub fn build(b: *Build) !void {
         exe,
         exec,
     };
+    // Common compile flags
     for (&build_targets) |t| {
-        t.addIncludePath(lua_src.path("src"));
         t.linkLibC();
         switch (target.result.os.tag) {
             .aix => {
@@ -94,11 +98,13 @@ pub fn build(b: *Build) !void {
         exe.defineCMacro("LUA_BUILD_AS_DLL", null);
     }
 
+    lib.addIncludePath(lua_src.path("src"));
     lib.addCSourceFiles(.{
         .root = lua_src.path("src"),
         .files = &base_src,
         .flags = &cflags,
     });
+
     lib.installHeadersDirectory(
         lua_src.path("src"),
         "",
@@ -127,6 +133,10 @@ pub fn build(b: *Build) !void {
         .install_dir = .{ .custom = "man" },
         .install_subdir = "man1",
     });
+
+    const run_step = b.step("run", "run lua interpreter");
+    const run_cmd = b.addRunArtifact(exe);
+    run_step.dependOn(&run_cmd.step);
 }
 const ArtifactTarget = union(enum) {
     // True if shared options
