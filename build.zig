@@ -9,7 +9,7 @@ const version = std.SemanticVersion{
     .patch = 7,
 };
 const lib_name = "lua";
-const exe_name = lib_name;
+const exe_name = lib_name ++ "_exe";
 const compiler_name = "luac";
 
 pub fn build(b: *Build) !void {
@@ -140,10 +140,6 @@ pub fn build(b: *Build) !void {
         .flags = &cflags,
     });
 
-    // if (build_shared) {
-    //     exe.addRPath(.{ .cwd_relative = b.getInstallPath(.{ .lib = {} }, "") });
-    //     exec.addRPath(.{ .cwd_relative = b.getInstallPath(.{ .lib = {} }, "") });
-    // }
     if (shared) |s| {
         exe.linkLibrary(s);
         b.installArtifact(s);
@@ -152,10 +148,10 @@ pub fn build(b: *Build) !void {
         b.installArtifact(lib);
     }
 
+    const install_bin = b.addInstallBinFile(exe.getEmittedBin(), "lua");
+    b.getInstallStep().dependOn(&install_bin.step);
     exec.linkLibrary(lib);
 
-    b.installArtifact(exe);
-    b.installArtifact(exec);
     b.installDirectory(.{
         .source_dir = lua_src.path("doc"),
         .include_extensions = &.{".1"},
