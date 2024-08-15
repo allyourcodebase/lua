@@ -25,16 +25,18 @@ pub fn build(b: *Build) !void {
 
     const lua_src = b.dependency("lua", .{});
 
-    const lib = if (!build_shared)
+    const lib =
         b.addStaticLibrary(artifactOptions(
-            .{ .shared = false },
-            .{ .target = target, .optimize = optimize },
-        ))
-    else
+        .{ .shared = false },
+        .{ .target = target, .optimize = optimize },
+    ));
+    const shared = if (build_shared)
         b.addSharedLibrary(artifactOptions(
             .{ .shared = true },
             .{ .target = target, .optimize = optimize },
-        ));
+        ))
+    else
+        null;
     const exe = b.addExecutable(artifactOptions(.exe, .{
         .target = target,
         .optimize = optimize,
@@ -46,16 +48,21 @@ pub fn build(b: *Build) !void {
     if (!target.result.isMinGW()) {
         lib.linkSystemLibrary("m");
         exe.linkSystemLibrary("m");
+        exec.linkSystemLibrary("m");
     }
-    exec.linkSystemLibrary("m");
-    const build_targets = [_]*Build.Step.Compile{
+    const build_targets = [_]?*Build.Step.Compile{
         lib,
         exe,
         exec,
+        shared,
     };
     // Common compile flags
-    for (&build_targets) |t| {
+    for (&build_targets) |tr| {
+        if (tr == null)
+            continue;
+        const t = tr.?;
         t.linkLibC();
+        t.addIncludePath(lua_src.path("src"));
         switch (target.result.os.tag) {
             .aix => {
                 t.defineCMacro("LUA_USE_POSIX", null);
@@ -97,8 +104,20 @@ pub fn build(b: *Build) !void {
         lib.defineCMacro("LUA_BUILD_AS_DLL", null);
         exe.defineCMacro("LUA_BUILD_AS_DLL", null);
     }
+    if (shared) |s| {
+        s.addCSourceFiles(.{
+            .root = lua_src.path("src"),
+            .files = &base_src,
+            .flags = &cflags,
+        });
 
-    lib.addIncludePath(lua_src.path("src"));
+        s.installHeadersDirectory(
+            lua_src.path("src"),
+            "",
+            .{ .include_extensions = &lua_inc },
+        );
+    }
+
     lib.addCSourceFiles(.{
         .root = lua_src.path("src"),
         .files = &base_src,
@@ -121,10 +140,20 @@ pub fn build(b: *Build) !void {
         .flags = &cflags,
     });
 
-    exe.linkLibrary(lib);
+    // if (build_shared) {
+    //     exe.addRPath(.{ .cwd_relative = b.getInstallPath(.{ .lib = {} }, "") });
+    //     exec.addRPath(.{ .cwd_relative = b.getInstallPath(.{ .lib = {} }, "") });
+    // }
+    if (shared) |s| {
+        exe.linkLibrary(s);
+        b.installArtifact(s);
+    } else {
+        exe.linkLibrary(lib);
+        b.installArtifact(lib);
+    }
+
     exec.linkLibrary(lib);
 
-    b.installArtifact(lib);
     b.installArtifact(exe);
     b.installArtifact(exec);
     b.installDirectory(.{
@@ -137,6 +166,13 @@ pub fn build(b: *Build) !void {
     const run_step = b.step("run", "run lua interpreter");
     const run_cmd = b.addRunArtifact(exe);
     run_step.dependOn(&run_cmd.step);
+    const unpack_step = b.step("unpack", "unpack source");
+    const unpack_cmd = b.addInstallDirectory(.{
+        .source_dir = lua_src.path(""),
+        .install_dir = .prefix,
+        .install_subdir = "",
+    });
+    unpack_step.dependOn(&unpack_cmd.step);
 }
 const ArtifactTarget = union(enum) {
     // True if shared options
@@ -159,6 +195,12 @@ fn artifactOptions(comptime options: ArtifactTarget, opts: ArtifactTargetOptions
     return switch (options) {
         .shared => |shared| if (shared) blk: {
             switch (t) {
+                .windows => break :blk .{
+                    .name = lib_name ++ "54",
+                    .target = opts.target,
+                    .optimize = opts.optimize,
+                    .strip = true,
+                },
                 else => break :blk .{
                     .name = lib_name,
                     .target = opts.target,
@@ -192,6 +234,7 @@ fn artifactOptions(comptime options: ArtifactTarget, opts: ArtifactTargetOptions
 }
 
 const cflags = [_][]const u8{
+    "-std=gnu99",
     "-Wall",
     "-Wextra",
 };
