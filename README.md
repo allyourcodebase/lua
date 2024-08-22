@@ -7,15 +7,17 @@ zig build
 ```
 
 ## Build Artifacts
-| Name | Artifact |
-| "lua" | The main lua library |
-| "lua_exe" | The lua interpreter |
-| "luac" | The lua bytecode compiler |
+| Name      | Artifact                  |
+|:---------:| ------------------------- |
+| "lua"     | The main lua library      |
+| "lua_exe" | The lua interpreter       |
+| "luac"    | The lua bytecode compiler |
 
 ## Compile Options
-| Name | Type | Description |
-| release | bool | optimize for end users |
-| shared | bool | build as shared library |
+| Name         | Type | Description                |
+|:------------:| ---- | -------------------------- |
+| release      | bool | optimize for end users     |
+| shared       | bool | build as shared library    |
 | use_readline | bool | readline support for linux |
 
 ## Using in a zig project
