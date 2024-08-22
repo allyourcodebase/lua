@@ -1,6 +1,10 @@
 # Lua 
 ## 5.4.7
 
+## Warning
+due to a bug in the 0.13.0 release of the zig compiler you will need the development version of zig in order to build the lua54.dll on windows.
+
+## Build Instructions
 To build all targets run 
 ```sh
 zig build
