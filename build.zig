@@ -150,7 +150,9 @@ pub fn build(b: *Build) !void {
 
     const install_bin = b.addInstallBinFile(exe.getEmittedBin(), "lua");
     b.getInstallStep().dependOn(&install_bin.step);
+
     exec.linkLibrary(lib);
+    b.installArtifact(exec);
 
     b.installDirectory(.{
         .source_dir = lua_src.path("doc"),
