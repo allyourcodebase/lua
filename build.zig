@@ -148,9 +148,7 @@ pub fn build(b: *Build) !void {
         b.installArtifact(lib);
     }
 
-    const install_bin = b.addInstallBinFile(exe.getEmittedBin(), "lua");
-    b.getInstallStep().dependOn(&install_bin.step);
-
+    b.installArtifact(exe);
     exec.linkLibrary(lib);
     b.installArtifact(exec);
 
