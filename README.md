@@ -27,7 +27,7 @@ zig build
 ## Using in a zig project
 To add to a zig project run:
 ```
-zig fetch --save https://github.com/delta1024Packages/lua/archive/refs/tags/5.4.7.tar.gz
+zig fetch --save https://github.com/allyourcodebase/lua/archive/refs/tags/5.4.7.tar.gz
 ```
 then add the following to your `build.zig` 
 ```zig
