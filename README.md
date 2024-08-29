@@ -32,10 +32,8 @@ zig fetch --save https://github.com/allyourcodebase/lua/archive/refs/tags/5.4.7.
 then add the following to your `build.zig` 
 ```zig
 const lua_dep = b.dependency("lua", .{
-    .{
-        .target = target,
-        .release = optimize != .Debug,
-    }
+    .target = target,
+    .release = optimize != .Debug,
 });
 const lua_lib = lua_dep.artifact("lua");
 ```
