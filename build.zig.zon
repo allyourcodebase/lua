@@ -3,7 +3,7 @@
     .version = "5.4.7",
     .fingerprint = 0xd671372bcadcaace,
 
-    .minimum_zig_version = "0.14.0",
+    .minimum_zig_version = "0.15.0",
 
     .dependencies = .{
         .lua = .{

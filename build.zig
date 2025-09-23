@@ -25,26 +25,44 @@ pub fn build(b: *Build) !void {
 
     const lua_src = b.dependency("lua", .{});
 
-    const lib =
-        b.addStaticLibrary(artifactOptions(
-            .{ .shared = false },
-            .{ .target = target, .optimize = optimize },
-        ));
+    const lib = b.addLibrary(.{
+        .name = lib_name,
+        .linkage = .static,
+        .root_module = b.createModule(.{
+            .link_libc = true,
+            .optimize = optimize,
+            .target = target,
+        }),
+    });
     const shared = if (build_shared)
-        b.addSharedLibrary(artifactOptions(
-            .{ .shared = true },
-            .{ .target = target, .optimize = optimize },
-        ))
+        b.addLibrary(.{
+            .name = lib_name ++ "54",
+            .linkage = .dynamic,
+            .root_module = b.createModule(.{
+                .link_libc = true,
+                .optimize = optimize,
+                .target = target,
+                .strip = if (target.result.os.tag == .windows) true else null,
+            }),
+        })
     else
         null;
-    const exe = b.addExecutable(artifactOptions(.exe, .{
-        .target = target,
-        .optimize = optimize,
-    }));
-    const exec = b.addExecutable(artifactOptions(.exec, .{
-        .target = target,
-        .optimize = optimize,
-    }));
+    const exe = b.addExecutable(.{
+        .name = exe_name,
+        .root_module = b.createModule(.{
+            .link_libc = true,
+            .optimize = optimize,
+            .target = target,
+        }),
+    });
+    const exec = b.addExecutable(.{
+        .name = compiler_name,
+        .root_module = b.createModule(.{
+            .link_libc = true,
+            .optimize = optimize,
+            .target = target,
+        }),
+    });
     if (!target.result.isMinGW()) {
         lib.linkSystemLibrary("m");
         exe.linkSystemLibrary("m");
@@ -169,64 +187,6 @@ pub fn build(b: *Build) !void {
         .install_subdir = "",
     });
     unpack_step.dependOn(&unpack_cmd.step);
-}
-const ArtifactTarget = union(enum) {
-    // True if shared options
-    shared: bool,
-    exe,
-    exec,
-};
-const ArtifactTargetOptions = struct {
-    target: ResolvedTarget,
-    optimize: OptimizeMode,
-};
-fn artifactOptions(comptime options: ArtifactTarget, opts: ArtifactTargetOptions) switch (options) {
-    .exe, .exec => Build.ExecutableOptions,
-    .shared => |shared| if (shared)
-        Build.SharedLibraryOptions
-    else
-        Build.StaticLibraryOptions,
-} {
-    const t = opts.target.result.os.tag;
-    return switch (options) {
-        .shared => |shared| if (shared) blk: {
-            switch (t) {
-                .windows => break :blk .{
-                    .name = lib_name ++ "54",
-                    .target = opts.target,
-                    .optimize = opts.optimize,
-                    .strip = true,
-                },
-                else => break :blk .{
-                    .name = lib_name,
-                    .target = opts.target,
-                    .optimize = opts.optimize,
-                },
-            }
-        } else blk: {
-            switch (t) {
-                else => break :blk .{
-                    .name = lib_name,
-                    .target = opts.target,
-                    .optimize = opts.optimize,
-                },
-            }
-        },
-        .exe => switch (t) {
-            else => .{
-                .name = exe_name,
-                .target = opts.target,
-                .optimize = opts.optimize,
-            },
-        },
-        .exec => switch (t) {
-            else => .{
-                .name = compiler_name,
-                .target = opts.target,
-                .optimize = opts.optimize,
-            },
-        },
-    };
 }
 
 const cflags = [_][]const u8{
