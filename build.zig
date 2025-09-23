@@ -6,7 +6,7 @@ const OptimizeMode = std.builtin.OptimizeMode;
 const version = std.SemanticVersion{
     .major = 5,
     .minor = 4,
-    .patch = 7,
+    .patch = 8,
 };
 const lib_name = "lua";
 const exe_name = lib_name ++ "_exe";
