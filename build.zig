@@ -8,9 +8,6 @@ const version = std.SemanticVersion{
     .minor = 4,
     .patch = 8,
 };
-const lib_name = "lua";
-const exe_name = lib_name ++ "_exe";
-const compiler_name = "luac";
 
 pub fn build(b: *Build) !void {
     const target = b.standardTargetOptions(.{});
@@ -25,150 +22,139 @@ pub fn build(b: *Build) !void {
 
     const lua_src = b.dependency("lua", .{});
 
-    const lib = b.addLibrary(.{
-        .name = lib_name,
-        .linkage = .static,
-        .root_module = b.createModule(.{
-            .link_libc = true,
-            .optimize = optimize,
-            .target = target,
-        }),
+    const static = b.addModule("staticlib", .{
+        .link_libc = true,
+        .optimize = optimize,
+        .target = target,
     });
-    const shared = if (build_shared)
-        b.addLibrary(.{
-            .name = lib_name ++ "54",
-            .linkage = .dynamic,
-            .root_module = b.createModule(.{
-                .link_libc = true,
-                .optimize = optimize,
-                .target = target,
-                .strip = if (target.result.os.tag == .windows) true else null,
-            }),
-        })
-    else
-        null;
-    const exe = b.addExecutable(.{
-        .name = exe_name,
-        .root_module = b.createModule(.{
-            .link_libc = true,
-            .optimize = optimize,
-            .target = target,
-        }),
-    });
-    const exec = b.addExecutable(.{
-        .name = compiler_name,
-        .root_module = b.createModule(.{
-            .link_libc = true,
-            .optimize = optimize,
-            .target = target,
-        }),
-    });
-    if (!target.result.isMinGW()) {
-        lib.linkSystemLibrary("m");
-        exe.linkSystemLibrary("m");
-        exec.linkSystemLibrary("m");
-    }
-    const build_targets = [_]?*Build.Step.Compile{
-        lib,
-        exe,
-        exec,
-        shared,
-    };
-    // Common compile flags
-    for (&build_targets) |tr| {
-        if (tr == null)
-            continue;
-        const t = tr.?;
-        t.linkLibC();
-        t.addIncludePath(lua_src.path("src"));
-        switch (target.result.os.tag) {
-            .aix => {
-                t.root_module.addCMacro("LUA_USE_POSIX", "");
-                t.root_module.addCMacro("LUA_USE_DLOPEN", "");
-                t.linkSystemLibrary("dl");
-            },
-            .freebsd, .netbsd, .openbsd => {
-                t.root_module.addCMacro("LUA_USE_LINUX", "");
-                t.root_module.addCMacro("LUA_USE_READLINE", "");
-                t.addIncludePath(.{ .cwd_relative = "/usr/include/edit" });
-                t.linkSystemLibrary("edit");
-            },
-            .ios => {
-                t.root_module.addCMacro("LUA_USE_IOS", "");
-            },
-            .linux => {
-                t.root_module.addCMacro("LUA_USE_LINUX", "");
-                t.linkSystemLibrary("dl");
-                if (use_readline.?) {
-                    t.root_module.addCMacro("LUA_USE_READLINE", "");
-                    t.linkSystemLibrary("readline");
-                }
-            },
-            .macos => {
-                t.root_module.addCMacro("LUA_USE_MACOSX", "");
-                t.root_module.addCMacro("LUA_USE_READLINE", "");
-                t.linkSystemLibrary("readline");
-            },
-            .solaris => {
-                t.root_module.addCMacro("LUA_USE_POSIX", "");
-                t.root_module.addCMacro("LUA_USE_DLOPEN", "");
-                t.root_module.addCMacro("_REENTRANT", "");
-                t.linkSystemLibrary("dl");
-            },
-            else => {},
-        }
-    }
-    if (target.result.isMinGW()) {
-        lib.root_module.addCMacro("LUA_BUILD_AS_DLL", "");
-        exe.root_module.addCMacro("LUA_BUILD_AS_DLL", "");
-    }
-    if (shared) |s| {
-        s.addCSourceFiles(.{
-            .root = lua_src.path("src"),
-            .files = &base_src,
-            .flags = &cflags,
-        });
-
-        s.installHeadersDirectory(
-            lua_src.path("src"),
-            "",
-            .{ .include_extensions = &lua_inc },
-        );
-    }
-
-    lib.addCSourceFiles(.{
+    static.addCSourceFiles(.{
         .root = lua_src.path("src"),
         .files = &base_src,
         .flags = &cflags,
     });
 
-    lib.installHeadersDirectory(
-        lua_src.path("src"),
-        "",
-        .{ .include_extensions = &lua_inc },
-    );
+    const shared = b.addModule("sharedlib", .{
+        .link_libc = true,
+        .optimize = optimize,
+        .target = target,
+        .strip = if (target.result.os.tag == .windows) true else null,
+    });
+    shared.addCSourceFiles(.{
+        .root = lua_src.path("src"),
+        .files = &base_src,
+        .flags = &cflags,
+    });
 
+    const exe = b.addModule("interpreter", .{
+        .link_libc = true,
+        .optimize = optimize,
+        .target = target,
+    });
     exe.addCSourceFile(.{
         .file = lua_src.path("src/lua.c"),
         .flags = &cflags,
     });
 
+    const exec = b.addModule("compiler", .{
+        .link_libc = true,
+        .optimize = optimize,
+        .target = target,
+    });
     exec.addCSourceFile(.{
         .file = lua_src.path("src/luac.c"),
         .flags = &cflags,
     });
 
-    if (shared) |s| {
-        exe.linkLibrary(s);
-        b.installArtifact(s);
-    } else {
-        exe.linkLibrary(lib);
-        b.installArtifact(lib);
+    // Common compile flags
+    for (&[_]*Build.Module{ static, shared, exe, exec }) |mod| {
+        const link = mod != shared;
+
+        mod.addIncludePath(lua_src.path("src"));
+        if (link and !target.result.isMinGW())
+            mod.linkSystemLibrary("m", .{});
+
+        switch (target.result.os.tag) {
+            .aix => {
+                mod.addCMacro("LUA_USE_POSIX", "");
+                mod.addCMacro("LUA_USE_DLOPEN", "");
+                if (link)
+                    mod.linkSystemLibrary("dl", .{});
+            },
+            .freebsd, .netbsd, .openbsd => {
+                mod.addCMacro("LUA_USE_LINUX", "");
+                mod.addCMacro("LUA_USE_READLINE", "");
+                mod.addIncludePath(.{ .cwd_relative = "/usr/include/edit" });
+                if (link)
+                    mod.linkSystemLibrary("edit", .{});
+            },
+            .ios => {
+                mod.addCMacro("LUA_USE_IOS", "");
+            },
+            .linux => {
+                mod.addCMacro("LUA_USE_LINUX", "");
+                if (link)
+                    mod.linkSystemLibrary("dl", .{});
+                if (use_readline.?) {
+                    mod.addCMacro("LUA_USE_READLINE", "");
+                    if (link)
+                        mod.linkSystemLibrary("readline", .{});
+                }
+            },
+            .macos => {
+                mod.addCMacro("LUA_USE_MACOSX", "");
+                mod.addCMacro("LUA_USE_READLINE", "");
+                if (link)
+                    mod.linkSystemLibrary("readline", .{});
+            },
+            .solaris => {
+                mod.addCMacro("LUA_USE_POSIX", "");
+                mod.addCMacro("LUA_USE_DLOPEN", "");
+                mod.addCMacro("_REENTRANT", "");
+                if (link)
+                    mod.linkSystemLibrary("dl", .{});
+            },
+            else => {},
+        }
+    }
+    if (target.result.isMinGW()) {
+        static.addCMacro("LUA_BUILD_AS_DLL", "");
+        exe.addCMacro("LUA_BUILD_AS_DLL", "");
     }
 
-    b.installArtifact(exe);
-    exec.linkLibrary(lib);
-    b.installArtifact(exec);
+    const sharedlib = b.addLibrary(.{
+        .name = "lua" ++ &[_]u8{
+            '0' + version.major, '0' + version.minor,
+        },
+        .root_module = shared,
+        .version = version,
+        .linkage = .dynamic,
+    });
+    b.installArtifact(sharedlib);
+
+    const staticlib =
+        b.addLibrary(.{
+            .name = "lua",
+            .root_module = static,
+            .version = version,
+            .linkage = .static,
+        });
+    b.installArtifact(staticlib);
+
+    exe.linkLibrary(if (build_shared) sharedlib else staticlib);
+    const lua_exe = b.addExecutable(.{
+        .name = "lua_exe",
+        .version = version,
+        .root_module = exe,
+    });
+    b.installArtifact(lua_exe);
+
+    exec.linkLibrary(staticlib);
+    const luac_exe = b.addExecutable(.{
+        .name = "luac",
+        .version = version,
+        .root_module = exe,
+    });
+    b.installArtifact(luac_exe);
 
     b.installDirectory(.{
         .source_dir = lua_src.path("doc"),
@@ -178,7 +164,8 @@ pub fn build(b: *Build) !void {
     });
 
     const run_step = b.step("run", "run lua interpreter");
-    const run_cmd = b.addRunArtifact(exe);
+    const run_cmd = b.addRunArtifact(lua_exe);
+    if (b.args) |args| run_cmd.addArgs(args);
     run_step.dependOn(&run_cmd.step);
     const unpack_step = b.step("unpack", "unpack source");
     const unpack_cmd = b.addInstallDirectory(.{
